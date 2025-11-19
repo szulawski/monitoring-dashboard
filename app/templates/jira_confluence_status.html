@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1>Jira & Confluence Status</h1>
+    </div>
+
+    {% if not error %}
+    <div class="card border-0">
+        <div class="card-body">
+            <table class="table table-bordered text-center">
+                <thead class="table-light">
+                    <tr>
+                        <th scope="col" style="width: 50%;">Jira</th>
+                        <th scope="col" style="width: 50%;">Confluence</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>
+                            {% if jira and jira.state == 'RUNNING' %}
+                                <span class="badge text-bg-success fs-5">Running</span>
+                            {% elif jira and jira.state %}
+                                <span class="badge text-bg-warning fs-5">{{ jira.state }}</span>
+                            {% else %}
+                                <span class="badge text-bg-danger fs-5">Error</span>
+                                <p class="text-muted small mt-2">{{ jira.error or 'Could not fetch status.' }}</p>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if confluence and confluence.state == 'RUNNING' %}
+                                <span class="badge text-bg-success fs-5">Running</span>
+                            {% elif confluence and confluence.state %}
+                                <span class="badge text-bg-warning fs-5">{{ confluence.state }}</span>
+                            {% else %}
+                                <span class="badge text-bg-danger fs-5">Error</span>
+                                <p class="text-muted small mt-2">{{ confluence.error or 'Could not fetch status.' }}</p>
+                            {% endif %}
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

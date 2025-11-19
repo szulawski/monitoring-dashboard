@@ -1,0 +1,348 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-10">
+            <h1 class="mb-4">Settings</h1>
+            
+            <div class="card">
+                <div class="card-header">
+                    <ul class="nav nav-tabs card-header-tabs" id="settingsTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="github-tab" data-bs-toggle="tab" data-bs-target="#github" type="button" role="tab" aria-controls="github">GitHub Actions</button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="jira-tab" data-bs-toggle="tab" data-bs-target="#jira" type="button" role="tab" aria-controls="jira">Jira & Confluence</button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="ado-tab" data-bs-toggle="tab" data-bs-target="#ado" type="button" role="tab" aria-controls="ado">Azure DevOps</button>
+                        </li>
+                    </ul>
+                </div>
+                <div class="card-body">
+                    <div class="tab-content pt-3" id="settingsTabsContent">
+                        
+                        <div class="tab-pane fade" id="github" role="tabpanel" aria-labelledby="github-tab">
+                            <form method="POST" action="{{ url_for('main.settings') }}">
+                                <input type="hidden" name="form_name" value="github">
+                                <input type="hidden" name="active_tab" value="#github">
+                                <h5 class="card-title">API Settings</h5>
+                                <div class="mb-3">
+                                    <label for="api_token" class="form-label">New GitHub API Token</label>
+                                    <input type="password" class="form-control" id="api_token" name="api_token" placeholder="Leave blank to keep current token">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="org_name" class="form-label">GitHub Organization</label>
+                                    <input type="text" class="form-control" id="org_name" name="org_name" value="{{ config.ORGANIZATION or '' }}" required>
+                                </div>
+                                <div class="d-flex align-items-center gap-2">
+                                    <button type="submit" class="btn btn-primary">Save GitHub Settings</button>
+                                    <button type="button" id="check-token-btn" class="btn btn-secondary">Verify connection</button>
+                                    <div id="validation-result-container" class="ms-3"></div>
+                                </div>
+                            </form>
+                            <hr>
+                            <h5 class="card-title mt-4">Select runner groups to monitor</h5>
+                            <div id="multiselect-container" class="d-none">
+                                <div class="row">
+                                    <div class="col-md-5"><label for="available-groups" class="form-label">Available</label><input type="text" id="search-available" class="form-control mb-2" placeholder="Filter..."><select id="available-groups" class="form-select" multiple size="10"></select></div>
+                                    <div class="col-md-2 d-flex flex-column justify-content-center align-items-center"><button id="add-to-selected" class="btn btn-secondary mb-2" title="Add >">&gt;</button><button id="remove-from-selected" class="btn btn-secondary" title="< Remove">&lt;</button></div>
+                                    <div class="col-md-5"><label for="selected-groups" class="form-label">Monitored</label><select id="selected-groups" class="form-select" multiple size="10"></select></div>
+                                </div>
+                                <button id="save-groups" class="btn btn-success mt-3">Save Monitored Groups</button>
+                            </div>
+                            <div id="multiselect-loader"><p class="text-muted">Loading...</p><div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div></div>
+                        </div>
+
+                        <div class="tab-pane fade" id="jira" role="tabpanel" aria-labelledby="jira-tab">
+                            <form method="POST" action="{{ url_for('main.settings') }}">
+                                <input type="hidden" name="form_name" value="jira">
+                                <input type="hidden" name="active_tab" value="#jira">
+                                <div class="mb-3"><label for="jira_base_url" class="form-label">Base URL</label><input type="url" class="form-control" id="jira_base_url" name="jira_base_url" value="{{ config.JIRA_BASE_URL or '' }}" placeholder="https://your-company.atlassian.net" required><div class="form-text">The base URL used for health checks of Jira and Confluence APIs.</div></div>
+                                <div class="mb-3"><label for="jira_email" class="form-label">Email Address</label><input type="email" class="form-control" id="jira_email" name="jira_email" value="{{ config.JIRA_EMAIL or '' }}" placeholder="your.email@example.com" required><div class="form-text">The email associated with your Atlassian account.</div></div>
+                                <div class="mb-3"><label for="jira_api_token" class="form-label">API Token</label><input type="password" class="form-control" id="jira_api_token" name="jira_api_token" placeholder="Leave blank to keep current token"><div class="form-text">The API token for accessing Jira and Confluence.</div></div>
+                                <button type="submit" class="btn btn-primary">Save Jira Settings</button>
+                            </form>
+                        </div>
+
+                        <div class="tab-pane fade" id="ado" role="tabpanel" aria-labelledby="ado-tab">
+                            <form id="add-ado-org-form" method="POST" action="{{ url_for('main.settings') }}" class="row g-3 align-items-end mb-4 border-bottom pb-4">
+                                <input type="hidden" name="form_name" value="add_ado_org">
+                                <input type="hidden" name="active_tab" value="#ado">
+                                <div class="col"><label for="new_ado_org" class="form-label">New Organization Name</label><input type="text" class="form-control" id="new_ado_org" name="organization_name" placeholder="your-organization" required></div>
+                                <div class="col"><label for="new_ado_pat" class="form-label">Personal Access Token (PAT)</label><input type="password" class="form-control" id="new_ado_pat" name="pat_token" required></div>
+                                <div class="col-auto"><button type="submit" class="btn btn-success">Add Organization</button></div>
+                            </form>
+                            <h5 class="mt-4">Configured Organizations</h5>
+                            <div class="accordion" id="adoAccordion">
+                                {% for config in ado_configs %}
+                                <div class="accordion-item" data-config-id="{{ config.id }}">
+                                    <h2 class="accordion-header" id="heading-{{ config.id }}"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-{{ config.id }}">{{ config.organization_name }}</button></h2>
+                                    <div id="collapse-{{ config.id }}" class="accordion-collapse collapse" aria-labelledby="heading-{{ config.id }}" data-bs-parent="#adoAccordion">
+                                        <div class="accordion-body">
+                                            <form method="POST" action="{{ url_for('main.settings') }}">
+                                                <input type="hidden" name="form_name" value="update_ado_org">
+                                                <input type="hidden" name="config_id" value="{{ config.id }}">
+                                                <input type="hidden" name="active_tab" value="#ado">
+                                                <div class="d-flex justify-content-end"><button type="button" class="btn btn-danger btn-sm mb-2 delete-ado-config">Delete this Configuration</button></div>
+                                                <div class="mb-3"><label class="form-label">New Personal Access Token</label><input type="password" class="form-control" name="pat_token" placeholder="Leave blank to keep current token"></div>
+                                                <div class="d-flex justify-content-between align-items-center">
+                                                    <button type="submit" class="btn btn-primary">Save Token</button>
+                                                    <div class="verification-section text-end"><button type="button" class="btn btn-secondary verify-ado-connection">Verify & Load Pools</button><div class="status-indicator mt-2"></div></div>
+                                                </div>
+                                            </form>
+                                            <hr>
+                                            <h6>Agent Pools</h6>
+                                            <div class="pools-multiselect-container mt-3" style="display: none;"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                                {% else %}
+                                <p class="text-muted">No Azure DevOps organizations configured yet.</p>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+{{ super() }}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    
+    // --- OGÓLNA LOGIKA DLA ZAKŁADEK (NOWA WERSJA) ---
+    // Ta sekcja odczytuje, która zakładka ma być aktywna, na podstawie zmiennej
+    // przekazanej z kontrolera Flaska. To rozwiązuje problemy z testami.
+    const activeTabId = '{{ active_tab | default("#github") | e }}';
+    const triggerEl = document.querySelector(`button[data-bs-target="${activeTabId}"]`);
+    if (triggerEl) {
+        const tab = new bootstrap.Tab(triggerEl);
+        tab.show();
+    }
+
+
+    // --- UNIWERSALNA FUNKCJA POMOCNICZA ---
+    function moveSelectedOptions(fromList, toList) {
+        Array.from(fromList.selectedOptions).forEach(option => toList.appendChild(option));
+    }
+
+
+    // --- LOGIKA DLA ZAKŁADKI GITHUB ACTIONS ---
+    const ghSection = document.getElementById('github');
+    if (ghSection) {
+        const ghOrgNameInput = ghSection.querySelector('#org_name');
+        const ghLoader = ghSection.querySelector('#multiselect-loader');
+        const ghMultiselectContainer = ghSection.querySelector('#multiselect-container');
+        const ghAvailableList = ghSection.querySelector('#available-groups');
+        const ghSelectedList = ghSection.querySelector('#selected-groups');
+        const ghAddBtn = ghSection.querySelector('#add-to-selected');
+        const ghRemoveBtn = ghSection.querySelector('#remove-from-selected');
+        const ghSaveBtn = ghSection.querySelector('#save-groups');
+        const ghSearchInput = ghSection.querySelector('#search-available');
+        const checkTokenBtn = ghSection.querySelector('#check-token-btn');
+        const validationResultContainer = ghSection.querySelector('#validation-result-container');
+        let ghAllGroups = [];
+
+        async function loadGitHubRunnerGroups() {
+            ghLoader.style.display = 'block';
+            try {
+                const response = await fetch('/api/runner-groups');
+                if (!response.ok) throw new Error('Failed to fetch groups');
+                const data = await response.json();
+                ghAllGroups = data.available_groups || [];
+                const monitoredIds = new Set(data.monitored_ids || []);
+                populateGitHubLists(monitoredIds);
+                ghLoader.style.display = 'none';
+                ghMultiselectContainer.classList.remove('d-none');
+            } catch (error) {
+                console.error("Error loading GitHub groups:", error);
+                ghLoader.innerHTML = `<p class="text-danger">Network error while fetching groups.</p>`;
+            }
+        }
+
+        function populateGitHubLists(monitoredIds) {
+            ghAvailableList.innerHTML = '';
+            ghSelectedList.innerHTML = '';
+            const currentSearch = ghSearchInput.value.toLowerCase();
+            ghAllGroups.forEach(group => {
+                const option = new Option(group.name, group.id);
+                if (monitoredIds.has(parseInt(group.id))) {
+                    ghSelectedList.add(option);
+                } else if (group.name.toLowerCase().includes(currentSearch)) {
+                    ghAvailableList.add(option);
+                }
+            });
+        }
+        
+        ghAddBtn.addEventListener('click', () => moveSelectedOptions(ghAvailableList, ghSelectedList));
+        ghRemoveBtn.addEventListener('click', () => moveSelectedOptions(ghSelectedList, ghAvailableList));
+        ghSearchInput.addEventListener('input', () => populateGitHubLists(new Set(Array.from(ghSelectedList.options).map(o => parseInt(o.value)))));
+
+        ghSaveBtn.addEventListener('click', async () => {
+            const selectedGroupsData = Array.from(ghSelectedList.options).map(opt => [parseInt(opt.value), opt.textContent]);
+            ghSaveBtn.disabled = true;
+            ghSaveBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Saving...';
+            try {
+                await fetch('/api/runner-groups', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ group_ids: selectedGroupsData })
+                });
+                // Tutaj można dodać powiadomienie o sukcesie, np. alert lub dynamiczny tekst
+            } finally {
+                ghSaveBtn.disabled = false;
+                ghSaveBtn.innerHTML = 'Save Monitored Groups';
+            }
+        });
+
+        if (checkTokenBtn) {
+            checkTokenBtn.addEventListener('click', async function () {
+                this.disabled = true;
+                validationResultContainer.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Checking...';
+                try {
+                    const response = await fetch('/health');
+                    const data = await response.json();
+                    if (response.ok && data.token_is_valid) {
+                        validationResultContainer.className = 'ms-3 text-success d-flex align-items-center';
+                        validationResultContainer.innerHTML = `<i class="bi bi-check-circle-fill me-2"></i> Token is valid.`;
+                    } else {
+                        validationResultContainer.className = 'ms-3 text-danger d-flex align-items-center';
+                        validationResultContainer.innerHTML = `<i class="bi bi-x-circle-fill me-2"></i> ${data.error || "Token invalid"}`;
+                    }
+                } catch (error) {
+                    validationResultContainer.className = 'ms-3 text-danger d-flex align-items-center';
+                    validationResultContainer.innerHTML = `<i class="bi bi-exclamation-triangle-fill me-2"></i> Network error.`;
+                } finally {
+                    this.disabled = false;
+                }
+            });
+        }
+
+        if (ghOrgNameInput.value) {
+            loadGitHubRunnerGroups();
+        } else {
+            ghLoader.innerHTML = '<p class="text-muted">Configure GitHub Organization to see runner groups.</p>';
+        }
+    }
+
+
+    // --- LOGIKA DLA ZAKŁADKI AZURE DEVOPS ---
+    const adoAccordion = document.getElementById('adoAccordion');
+    if (adoAccordion) {
+        adoAccordion.addEventListener('click', async function(e) {
+            const configItem = e.target.closest('.accordion-item');
+            if (!configItem) return;
+            
+            const configId = configItem.dataset.configId;
+            const statusIndicator = configItem.querySelector('.status-indicator');
+            const poolsContainer = configItem.querySelector('.pools-multiselect-container');
+
+            if (e.target.classList.contains('delete-ado-config')) {
+                if (confirm('Are you sure you want to delete this configuration? This action cannot be undone.')) {
+                    try {
+                        const response = await fetch(`/api/azure-devops/${configId}`, { method: 'DELETE' });
+                        if (response.ok) {
+                            configItem.remove();
+                        } else { alert('Failed to delete configuration.'); }
+                    } catch (error) { alert('An error occurred while deleting.'); }
+                }
+            }
+            
+            if (e.target.classList.contains('verify-ado-connection')) {
+                const verifyBtn = e.target;
+                verifyBtn.disabled = true;
+                poolsContainer.style.display = 'none';
+                statusIndicator.innerHTML = `<span class="spinner-border spinner-border-sm"></span> Verifying...`;
+                
+                try {
+                    const response = await fetch(`/api/azure-devops/${configId}/verify`, { method: 'POST' });
+                    const data = await response.json();
+                    if (response.ok) {
+                        statusIndicator.innerHTML = `<span class="text-success"><i class="bi bi-check-circle-fill"></i> ${data.message}</span>`;
+                        loadAdoPools(configId, poolsContainer);
+                    } else {
+                        statusIndicator.innerHTML = `<span class="text-danger"><i class="bi bi-x-circle-fill"></i> ${data.message}</span>`;
+                    }
+                } catch (error) {
+                    statusIndicator.innerHTML = `<span class="text-danger">Network error during verification.</span>`;
+                } finally {
+                    verifyBtn.disabled = false;
+                }
+            }
+
+            if (e.target.classList.contains('save-ado-pools')) {
+                const saveBtn = e.target;
+                const selectedList = configItem.querySelector('.ado-selected-pools');
+                if (!selectedList) return;
+                
+                const selectedPools = Array.from(selectedList.options).map(opt => ({ id: parseInt(opt.value), name: opt.textContent }));
+                saveBtn.disabled = true;
+                saveBtn.innerHTML = `<span class="spinner-border spinner-border-sm"></span> Saving...`;
+
+                try {
+                    const response = await fetch(`/api/azure-devops/${configId}/pools`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ pools: selectedPools })
+                    });
+                    const data = await response.json();
+                    statusIndicator.innerHTML = `<span class="text-success">${data.message}</span>`;
+                } catch (error) {
+                    statusIndicator.innerHTML = `<span class="text-danger">Error saving pools.</span>`;
+                } finally {
+                    saveBtn.disabled = false;
+                    saveBtn.innerHTML = 'Save Monitored Pools';
+                }
+            }
+        });
+    }
+
+    async function loadAdoPools(configId, container) {
+        container.style.display = 'block';
+        container.innerHTML = `<div class="spinner-border spinner-border-sm"></div> Loading pools...`;
+        
+        try {
+            const response = await fetch(`/api/azure-devops/${configId}/pools`);
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Failed to load pools');
+            
+            const { available_pools, monitored_ids } = data;
+            const monitoredIdsSet = new Set(monitored_ids);
+
+            container.innerHTML = `
+                <div class="row mt-3">
+                    <div class="col-md-5"><label class="form-label small">Available</label><select class="form-select ado-available-pools" multiple size="8"></select></div>
+                    <div class="col-md-2 d-flex flex-column justify-content-center align-items-center"><button class="btn btn-secondary mb-2 ado-add-pool" title="Add >">&gt;</button><button class="btn btn-secondary ado-remove-pool" title="< Remove">&lt;</button></div>
+                    <div class="col-md-5"><label class="form-label small">Monitored</label><select class="form-select ado-selected-pools" multiple size="8"></select></div>
+                </div>
+                <button class="btn btn-success mt-3 save-ado-pools">Save Monitored Pools</button>
+            `;
+
+            const availableList = container.querySelector('.ado-available-pools');
+            const selectedList = container.querySelector('.ado-selected-pools');
+            
+            available_pools.forEach(pool => {
+                const option = new Option(pool.name, pool.id);
+                if (monitoredIdsSet.has(pool.id)) {
+                    selectedList.add(option);
+                } else {
+                    availableList.add(option);
+                }
+            });
+
+            container.querySelector('.ado-add-pool').addEventListener('click', () => moveSelectedOptions(availableList, selectedList));
+            container.querySelector('.ado-remove-pool').addEventListener('click', () => moveSelectedOptions(selectedList, availableList));
+
+        } catch (error) {
+            container.innerHTML = `<p class="text-danger">${error.message}</p>`;
+        }
+    }
+});
+</script>
+{% endblock page_scripts %}

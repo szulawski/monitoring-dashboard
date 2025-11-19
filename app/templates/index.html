@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <h1 class="mb-4">Self-Hosted Runners Monitoring</h1>
+    
+    <!-- Container for the dynamic data -->
+    <div id="dashboard-container" class="row">
+    </div>
+
+    <div id="loading-indicator" class="text-center mt-5 d-none">
+        <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+        <p class="mt-2 text-muted">Loading...</p>
+    </div>
+</div>
+
+<div class="offcanvas offcanvas-end" tabindex="-1" id="runnerOffcanvas" aria-labelledby="runnerOffcanvasLabel">
+  <div class="offcanvas-header border-bottom">
+    <h5 class="offcanvas-title" id="runnerOffcanvasLabel">Runner details</h5>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+  </div>
+  <div class="offcanvas-body">
+    <div class="list-group" id="runner-list-container">
+        <!-- Dynamic runner list -->
+    </div>
+    <div id="sidebar-load-more-container" class="mt-3 text-center"></div>
+  </div>
+</div>
+{% endblock %}
+
+
+{% block page_scripts %}
+    {{ super() }}
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            
+            // --- SEKCJA 1: Inicjalizacja ---
+            const dashboardContainer = document.getElementById('dashboard-container');
+            const loadingIndicator = document.getElementById('loading-indicator');
+            const runnerSidebar = new bootstrap.Offcanvas(document.getElementById('runnerOffcanvas'));
+            const offcanvasTitle = document.getElementById('runnerOffcanvasLabel');
+            const runnerListContainer = document.getElementById('runner-list-container');
+            const loadMoreContainer = document.getElementById('sidebar-load-more-container');
+            const SIDEBAR_PAGE_SIZE = 20;
+
+            let runnerDataByGroup = {};
+            let sidebarCurrentRunners = [];
+            let sidebarCurrentPage = 1;
+
+
+            function renderDashboard(data) {
+                dashboardContainer.innerHTML = '';
+
+                if (!data.groups || data.groups.length === 0) {
+                    dashboardContainer.innerHTML = `
+                        <div class="col-12">
+                            <div class="alert alert-info text-center">
+                                <i class="bi bi-info-circle-fill me-2"></i>
+                                No runner-groups are assigned for monitoring. Visit <a href="{{ url_for('main.settings') }}" class="alert-link">Settings</a> to configure that.
+                            </div>
+                        </div>`;
+                    return;
+                }
+
+                data.groups.forEach(groupData => {
+                    const runners = groupData.runners_data.runners || [];
+                    const totalCount = groupData.runners_data.total_count || 0;
+                    const onlineCount = runners.filter(r => r.status === 'online').length;
+                    const offlineCount = runners.filter(r => r.status === 'offline').length;
+                    const busyCount = runners.filter(r => r.busy === true).length;
+                    
+                    const tableHTML = `
+                        <div class="col-lg-4 mb-4">
+                            <div class="card h-100">
+                                <div class="card-body p-0">
+                                    <table class="table table-bordered mb-0">
+                                        <thead class="table-light text-center">
+                                            <tr>
+                                                <th scope="col" data-group-name="${groupData.group_name}">
+                                                    ${groupData.group_name}
+                                                </th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr>
+                                                <td>
+                                                    Pool Size: <strong>${totalCount}</strong> (
+                                                    <span class="badge bg-success" data-group-name="${groupData.group_name}" data-filter-key="status" data-filter-value="online">${onlineCount} Online</span> / 
+                                                    <span class="badge bg-secondary" data-group-name="${groupData.group_name}" data-filter-key="status" data-filter-value="offline">${offlineCount} Offline</span>)
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td>
+                                                    Working:
+                                                    <span class="badge bg-warning" data-group-name="${groupData.group_name}" data-filter-key="busy" data-filter-value="true">${busyCount}</span> 
+                                                    out of 
+                                                    <span class="badge bg-success" data-group-name="${groupData.group_name}" data-filter-key="status" data-filter-value="online">${onlineCount}</span>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    dashboardContainer.insertAdjacentHTML('beforeend', tableHTML);
+                });
+            }
+
+            async function updateDashboardData() {
+                loadingIndicator.classList.remove('d-none');
+                dashboardContainer.innerHTML = '';
+                try {
+                    const response = await fetch('/api/dashboard-data');
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.error || `Network error: ${response.statusText}`);
+                    }
+                    const data = await response.json();
+
+                    runnerDataByGroup = {};
+                    if (data.groups) {
+                        data.groups.forEach(group => {
+                            runnerDataByGroup[group.group_name] = group.runners_data.runners || [];
+                        });
+                    }
+
+                    renderDashboard(data);
+                } catch (error) {
+                    console.error("Error while refreshind the dashboard:", error);
+                    dashboardContainer.innerHTML = `<div class="col-12"><div class="alert alert-danger">Unable to load the data: ${error.message}</div></div>`;
+                } finally {
+                    loadingIndicator.classList.add('d-none');
+                }
+            }
+            
+            function renderSidebarPage() {
+                loadMoreContainer.innerHTML = '';
+                
+                const start = (sidebarCurrentPage - 1) * SIDEBAR_PAGE_SIZE;
+                const end = start + SIDEBAR_PAGE_SIZE;
+                const runnersToShow = sidebarCurrentRunners.slice(start, end);
+
+                runnersToShow.forEach(runner => {
+                    const busyBadgeClass = runner.busy ? 'bg-warning' : 'bg-info';
+                    const busyBadgeText = runner.busy ? 'Busy' : 'Idle';
+                    const statusBadgeClass = runner.status === 'online' ? 'bg-success' : 'bg-secondary';
+                    const statusBadgeText = runner.status === 'online' ? 'Online' : 'Offline';
+                    const listItemHTML = `<div class="list-group-item"><div class="d-flex w-100 justify-content-between align-items-center"><h6 class="mb-0 text-break pe-2">${runner.name}</h6><div class="ms-2 text-nowrap"><span class="badge ${busyBadgeClass}">${busyBadgeText}</span> <span class="badge ${statusBadgeClass}">${statusBadgeText}</span></div></div></div>`;
+                    runnerListContainer.insertAdjacentHTML('beforeend', listItemHTML);
+                });
+
+                if (sidebarCurrentRunners.length > end) {
+                    const loadMoreBtn = document.createElement('button');
+                    loadMoreBtn.className = 'btn btn-outline-primary';
+                    loadMoreBtn.textContent = 'Show more';
+                    loadMoreBtn.addEventListener('click', () => {
+                        sidebarCurrentPage++;
+                        renderSidebarPage();
+                    });
+                    loadMoreContainer.appendChild(loadMoreBtn);
+                }
+            }
+
+            function showRunnerSidebar(runners, groupName, filterKey, filterValue) {
+                let filteredRunners = runners;
+                let title = `Runner Group: ${groupName}`;
+
+                if (filterKey && filterValue !== null) {
+                    filteredRunners = runners.filter(runner => String(runner[filterKey]) === String(filterValue));
+                    title += ` <code>(filter: ${filterKey}=${filterValue})</code>`;
+                }
+                
+                offcanvasTitle.innerHTML = title;
+                runnerListContainer.innerHTML = '';
+
+                if (filteredRunners.length === 0) {
+                    runnerListContainer.innerHTML = '<p class="text-muted text-center mt-3">No runners found for this filter.</p>';
+                    loadMoreContainer.innerHTML = '';
+                } else {
+                    sidebarCurrentRunners = filteredRunners;
+                    sidebarCurrentPage = 1;
+                    renderSidebarPage();
+                }
+                
+                runnerSidebar.show();
+            }
+
+            dashboardContainer.addEventListener('click', function (event) {
+                const triggerElement = event.target.closest('[data-group-name]');
+                if (triggerElement) {
+                    const groupName = triggerElement.dataset.groupName;
+                    const runners = runnerDataByGroup[groupName] || [];
+                    const filterKey = triggerElement.dataset.filterKey || null;
+                    const filterValue = triggerElement.dataset.filterValue !== undefined ? triggerElement.dataset.filterValue : null;
+                    
+                    showRunnerSidebar(runners, groupName, filterKey, filterValue);
+                }
+            });
+
+            document.addEventListener('app:refresh', updateDashboardData);
+            updateDashboardData();
+        });
+    </script>
+{% endblock page_scripts %}

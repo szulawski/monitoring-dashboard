@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<!-- Używamy atrybutu data-bs-theme do sterowania motywem Bootstrapa -->
+<html lang="pl" data-bs-theme="light">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Self-Hosted Runners Monitoring Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/custom.css') }}">
+</head>
+
+<body data-initial-refresh="{{ refresh_interval or 0 }}">
+
+    <div class="sidebar bg-dark text-white d-flex flex-column" data-bs-theme="dark">
+
+        <ul class="nav nav-pills flex-column">
+            <li class="nav-item">
+                <a href="/" class="nav-link" title="Dashboard"><i class="bi bi-house"></i></a>
+            </li>
+            <!-- <li class="nav-item">
+                <a href="/runners-queues" class="nav-link" title="Runners Queues"><i class="bi bi-bezier2"></i></a>
+            </li> -->
+
+            <li class="nav-item">
+                <a href="{{ url_for('main.jira_confluence_status') }}" class="nav-link" title="Jira & Confluence"><i
+                        class="fa-brands fa-atlassian"></i></a>
+            </li>
+            <li class="nav-item">
+                <a href="/azure-devops" class="nav-link" title="Azure DevOps"><i class="bi bi-microsoft"></i></a>
+            </li>
+            <li class="nav-item">
+                <a href="/healthcheck" class="nav-link" title="Health Check"><i class="bi bi-heart-pulse"></i></a>
+            </li>
+            <li class="nav-item">
+                <a href="/changelog" class="nav-link" title="Changelog"><i class="bi bi-file-earmark-diff"></i></a>
+            </li>
+            <li class="nav-item">
+                <a href="/settings" class="nav-link" title="Settings"><i class="bi bi-gear"></i></a>
+            </li>
+        </ul>
+        <a href="https://github.com/szulawski/monitoring-dashboard" target="_blank"
+            class="nav-link github-link" title="GitHub Repository">
+            <i class="bi bi-github"></i>
+        </a>
+    </div>
+
+    <div class="content-wrapper">
+        <main class="main-content">
+            <div class="container-fluid pt-4">
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                                {{ message }}
+                                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+            </div>
+            {% block content %}{% endblock %}
+        </main>
+
+        <footer class="footer fixed-bottom bg-body-tertiary py-2 border-top" style="margin-left: 80px;">
+            <div class="container-fluid d-flex justify-content-between align-items-center">
+                <div id="app-version" class="text-muted small">Version...</div>
+
+                <div class="d-flex align-items-center">
+                    <div class="form-check form-switch me-3">
+                        <input class="form-check-input" type="checkbox" role="switch" id="themeSwitch">
+                        <label class="form-check-label" for="themeSwitch"><i id="theme-icon"
+                                class="bi bi-brightness-high-fill"></i></label>
+                    </div>
+                    <span class="text-muted small me-2">Refresh rate:</span>
+                    <button id="refresh-decrease" class="btn btn-sm btn-outline-secondary" title="Zwolnij">-</button>
+                    <span id="refresh-interval-display" class="mx-2 fw-bold">0s</span>
+                    <button id="refresh-increase" class="btn btn-sm btn-outline-secondary" title="Przyspiesz">+</button>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+
+            const themeSwitch = document.getElementById('themeSwitch');
+            const themeIcon = document.getElementById('theme-icon');
+            const htmlElement = document.documentElement;
+
+            const getStoredTheme = () => localStorage.getItem('theme');
+            const setStoredTheme = theme => localStorage.setItem('theme', theme);
+
+            const applyTheme = (theme) => {
+                const effectiveTheme = theme || 'light';
+                htmlElement.setAttribute('data-bs-theme', effectiveTheme);
+                if (effectiveTheme === 'dark') {
+                    themeIcon.className = 'bi bi-moon-stars-fill';
+                    themeSwitch.checked = true;
+                } else {
+                    themeIcon.className = 'bi bi-brightness-high-fill';
+                    themeSwitch.checked = false;
+                }
+            };
+
+            themeSwitch.addEventListener('change', () => {
+                const theme = themeSwitch.checked ? 'dark' : 'light';
+                setStoredTheme(theme);
+                applyTheme(theme);
+            });
+
+            applyTheme(getStoredTheme());
+            const currentPath = window.location.pathname;
+            document.querySelectorAll('.sidebar .nav-link').forEach(link => {
+                if (link.getAttribute('href') === currentPath) {
+                    link.classList.add('active');
+                }
+            });
+            let refreshTimerId = null;
+            const intervalDisplay = document.getElementById('refresh-interval-display');
+            const increaseBtn = document.getElementById('refresh-increase');
+            const decreaseBtn = document.getElementById('refresh-decrease');
+
+            function getSanitizedInterval() {
+                const fromCookie = parseInt(getCookie('refreshInterval'), 10);
+                if (!isNaN(fromCookie)) return fromCookie;
+
+                const fromServer = parseInt(document.body.dataset.initialRefresh, 10);
+                if (!isNaN(fromServer)) return fromServer;
+
+                return 0;
+            }
+
+            function setCookie(name, value, days) {
+                let expires = "";
+                if (days) {
+                    const date = new Date();
+                    date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+                    expires = "; expires=" + date.toUTCString();
+                }
+                document.cookie = name + "=" + (value || "") + expires + "; path=/";
+            }
+
+            function getCookie(name) {
+                const nameEQ = name + "=";
+                const ca = document.cookie.split(';');
+                for (let i = 0; i < ca.length; i++) {
+                    let c = ca[i];
+                    while (c.charAt(0) == ' ') c = c.substring(1, c.length);
+                    if (c.indexOf(nameEQ) == 0) return c.substring(nameEQ.length, c.length);
+                }
+                return null;
+            }
+
+            async function fetchAndDisplayVersion() {
+                const versionElement = document.getElementById('app-version');
+                try {
+                    const response = await fetch('/version');
+                    if (!response.ok) throw new Error('Błąd sieci');
+                    const data = await response.json();
+                    versionElement.textContent = `Version: ${data.version}`;
+                } catch (error) {
+                    console.error('Unable to retrieve the version:', error);
+                    versionElement.textContent = 'Version error';
+                }
+            }
+
+            function setupRefreshControls() {
+                const intervalSeconds = getSanitizedInterval();
+                intervalDisplay.textContent = `${intervalSeconds}s`;
+                intervalDisplay.classList.toggle('text-success', intervalSeconds > 0);
+                if (refreshTimerId) { clearInterval(refreshTimerId); }
+                if (intervalSeconds > 0) {
+                    refreshTimerId = setInterval(() => {
+                        document.dispatchEvent(new CustomEvent('app:refresh'));
+                    }, intervalSeconds * 1000);
+                }
+            }
+
+            increaseBtn.addEventListener('click', () => {
+                let currentInterval = getSanitizedInterval();
+                setCookie('refreshInterval', currentInterval + 5, 365);
+                setupRefreshControls();
+            });
+
+            decreaseBtn.addEventListener('click', () => {
+                let currentInterval = getSanitizedInterval();
+                let newInterval = Math.max(0, currentInterval - 5);
+                setCookie('refreshInterval', newInterval, 365);
+                setupRefreshControls();
+            });
+
+            fetchAndDisplayVersion();
+            setupRefreshControls();
+        });
+    </script>
+
+    {% block page_scripts %}{% endblock %}
+
+</body>
+
+</html>

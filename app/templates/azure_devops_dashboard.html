@@ -1,0 +1,224 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <h1 class="mb-4">Azure DevOps Agent Pools Monitoring</h1>
+    
+    <div id="dashboard-container" class="row">
+        </div>
+
+    <div id="loading-indicator" class="text-center mt-5 d-none">
+        <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+        <p class="mt-2 text-muted">Loading Agent Pools Data...</p>
+    </div>
+</div>
+
+<div class="offcanvas offcanvas-end" tabindex="-1" id="agentOffcanvas" aria-labelledby="agentOffcanvasLabel">
+  <div class="offcanvas-header border-bottom">
+    <h5 class="offcanvas-title" id="agentOffcanvasLabel">Agent details</h5>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+  </div>
+  <div class="offcanvas-body">
+    <div class="list-group" id="agent-list-container">
+        </div>
+    <div id="sidebar-load-more-container" class="mt-3 text-center"></div>
+  </div>
+</div>
+{% endblock %}
+
+
+{% block page_scripts %}
+    {{ super() }}
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            
+            const dashboardContainer = document.getElementById('dashboard-container');
+            const loadingIndicator = document.getElementById('loading-indicator');
+            const agentSidebar = new bootstrap.Offcanvas(document.getElementById('agentOffcanvas'));
+            const offcanvasTitle = document.getElementById('agentOffcanvasLabel');
+            const agentListContainer = document.getElementById('agent-list-container');
+            const loadMoreContainer = document.getElementById('sidebar-load-more-container');
+            const SIDEBAR_PAGE_SIZE = 20;
+
+            let agentDataByPool = {}; // Przechowuje dane agentów dla każdej puli
+            let sidebarCurrentAgents = [];
+            let sidebarCurrentPage = 1;
+
+function renderDashboard(data) {
+    dashboardContainer.innerHTML = '';
+
+    if (!data.organizations || data.organizations.length === 0) {
+        dashboardContainer.innerHTML = `<div class="col-12"><div class="alert alert-info text-center">No Azure DevOps organizations are configured for monitoring. Visit <a href="{{ url_for('main.settings') }}" class="alert-link">Settings</a> to configure them.</div></div>`;
+        return;
+    }
+
+    data.organizations.forEach(org => {
+        if (!org.pools || org.pools.length === 0) return;
+
+        const orgHeader = `<div class="col-12"><h2 class="mt-4">${org.name}</h2><hr></div>`;
+        dashboardContainer.insertAdjacentHTML('beforeend', orgHeader);
+
+        org.pools.forEach(pool => {
+            const agents = pool.agents_data.agents || [];
+            const totalCount = pool.agents_data.total_count || 0;
+            const onlineCount = agents.filter(a => a.status === 'online').length;
+            const offlineCount = totalCount - onlineCount;
+            
+            // --- NOWA LOGIKA OBLICZEŃ DLA "WORKING" ---
+            const enabledAgents = agents.filter(a => a.enabled === true);
+            const totalEnabledCount = enabledAgents.length;
+            // Liczymy pracujących tylko spośród tych, którzy są włączeni
+            const busyCount = enabledAgents.filter(a => a.busy === true).length;
+            // -------------------------------------------
+            
+            const cardHTML = `
+                <div class="col-lg-4 mb-4">
+                    <div class="card h-100">
+                        <div class="card-body p-0">
+                            <table class="table table-bordered mb-0">
+                                <thead class="table-light text-center">
+                                    <tr><th scope="col" data-pool-id="${pool.id}" data-pool-name="${pool.name}">${pool.name}</th></tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>
+                                            Pool Size: <strong>${totalCount}</strong> (
+                                            <span class="badge bg-success" role="button" data-pool-name="${pool.name}" data-filter-key="status" data-filter-value="online">${onlineCount} Online</span> / 
+                                            <span class="badge bg-secondary" role="button" data-pool-name="${pool.name}" data-filter-key="status" data-filter-value="offline">${offlineCount} Offline</span>)
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td>
+                                            Working:
+                                            <span class="badge bg-warning" role="button" data-pool-name="${pool.name}" data-filter-key="busy" data-filter-value="true">${busyCount}</span> 
+                                            out of 
+                                            <span class="badge bg-info" role="button" data-pool-name="${pool.name}" data-filter-key="online_and_enabled" data-filter-value="true">${totalEnabledCount}</span>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            `;
+            dashboardContainer.insertAdjacentHTML('beforeend', cardHTML);
+        });
+    });
+}
+
+            // Funkcja pobierająca i aktualizująca dane
+            async function updateDashboardData() {
+                loadingIndicator.classList.remove('d-none');
+                dashboardContainer.innerHTML = '';
+                try {
+                    // ZMIANA: Odpytujemy nowy endpoint dla danych ADO
+                    const response = await fetch('/api/azure-devops/dashboard-data');
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.error || `Network error: ${response.statusText}`);
+                    }
+                    const data = await response.json();
+
+                    // Przechowujemy dane agentów w obiekcie dla łatwego dostępu
+                    agentDataByPool = {};
+                    if (data.organizations) {
+                        data.organizations.forEach(org => {
+                            org.pools.forEach(pool => {
+                                agentDataByPool[pool.name] = pool.agents_data.agents || [];
+                            });
+                        });
+                    }
+
+                    renderDashboard(data);
+                } catch (error) {
+                    console.error("Error while refreshing the dashboard:", error);
+                    dashboardContainer.innerHTML = `<div class="col-12"><div class="alert alert-danger">Unable to load the data: ${error.message}</div></div>`;
+                } finally {
+                    loadingIndicator.classList.add('d-none');
+                }
+            }
+            
+            // Funkcja renderująca paginowaną listę agentów w panelu bocznym
+            function renderSidebarPage() {
+                loadMoreContainer.innerHTML = '';
+                
+                const start = (sidebarCurrentPage - 1) * SIDEBAR_PAGE_SIZE;
+                const end = start + SIDEBAR_PAGE_SIZE;
+                const agentsToShow = sidebarCurrentAgents.slice(start, end);
+
+                agentsToShow.forEach(agent => {
+                    const busyBadgeClass = agent.busy ? 'bg-warning' : 'bg-info';
+                    const busyBadgeText = agent.busy ? 'Busy' : 'Idle';
+                    const statusBadgeClass = agent.status === 'online' ? 'bg-success' : 'bg-secondary';
+                    const statusBadgeText = agent.status === 'online' ? 'Online' : 'Offline';
+                    const listItemHTML = `<div class="list-group-item"><div class="d-flex w-100 justify-content-between align-items-center"><h6 class="mb-0 text-break pe-2">${agent.name}</h6><div class="ms-2 text-nowrap"><span class="badge ${busyBadgeClass}">${busyBadgeText}</span> <span class="badge ${statusBadgeClass}">${statusBadgeText}</span></div></div></div>`;
+                    agentListContainer.insertAdjacentHTML('beforeend', listItemHTML);
+                });
+
+                if (sidebarCurrentAgents.length > end) {
+                    const loadMoreBtn = document.createElement('button');
+                    loadMoreBtn.className = 'btn btn-outline-primary';
+                    loadMoreBtn.textContent = 'Show more';
+                    loadMoreBtn.addEventListener('click', () => {
+                        sidebarCurrentPage++;
+                        renderSidebarPage();
+                    });
+                    loadMoreContainer.appendChild(loadMoreBtn);
+                }
+            }
+
+            // Funkcja pokazująca i filtrująca panel boczny
+            function showAgentSidebar(agents, poolName, filterKey, filterValue) {
+                let filteredAgents = agents;
+                let title = `Agent Pool: ${poolName}`;
+
+                if (filterKey && filterValue !== null) {
+                    // Dostosowanie do filtrowania true/false jako stringów z atrybutów data-*
+                    const filterBool = filterValue === 'true'; 
+                    if (filterKey === 'busy') {
+                        filteredAgents = agents.filter(agent => agent.busy === filterBool);
+                    } else {
+                        filteredAgents = agents.filter(agent => agent.status === filterValue);
+                    }
+                    title += ` <code class="small">(filter: ${filterKey}=${filterValue})</code>`;
+                }
+                
+                offcanvasTitle.innerHTML = title;
+                agentListContainer.innerHTML = '';
+
+                if (filteredAgents.length === 0) {
+                    agentListContainer.innerHTML = '<p class="text-muted text-center mt-3">No agents found for this filter.</p>';
+                    loadMoreContainer.innerHTML = '';
+                } else {
+                    sidebarCurrentAgents = filteredAgents;
+                    sidebarCurrentPage = 1;
+                    renderSidebarPage();
+                }
+                
+                agentSidebar.show();
+            }
+
+            // Delegacja eventów dla klikalnych elementów na kartach
+            dashboardContainer.addEventListener('click', function (event) {
+                const triggerElement = event.target.closest('[data-pool-name]');
+                if (triggerElement) {
+                    const poolName = triggerElement.dataset.poolName;
+                    const agents = agentDataByPool[poolName] || [];
+                    const filterKey = triggerElement.dataset.filterKey || null;
+                    const filterValue = triggerElement.dataset.filterValue !== undefined ? triggerElement.dataset.filterValue : null;
+                    
+                    showAgentSidebar(agents, poolName, filterKey, filterValue);
+                }
+            });
+            
+            // Nasłuchiwanie na event odświeżania z stopki
+            document.addEventListener('app:refresh', updateDashboardData);
+
+            // Inicjalne załadowanie danych
+            updateDashboardData();
+        });
+    </script>
+{% endblock page_scripts %}

@@ -1,0 +1,16 @@
+Flask==3.0.3
+PyGithub==2.3.0
+python-dotenv==1.0.1
+requests==2.32.3
+markdown==3.6
+Flask-SQLAlchemy==3.1.1
+SQLAlchemy==2.0.31
+Flask-Migrate==4.0.7
+gunicorn==23.0.0
+cryptography
+Flask-Login
+Flask-WTF
+
+pytest==8.2.2
+pytest-cov==5.0.0
+requests-mock==1.12.1
