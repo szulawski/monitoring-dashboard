@@ -1,7 +1,7 @@
 <div align="center">
 
 # 🎯 Self-Hosted Runners Monitoring Dashboard
-
+[![CI - Build and Test](https://github.com/szulawski/monitoring-dashboard/actions/workflows/ci-build.yml/badge.svg)](https://github.com/szulawski/monitoring-dashboard/actions/workflows/ci-build.yml)
 [![Python](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![Docker](https://img.shields.io/badge/Docker-Ready-brightgreen.svg)](https://www.docker.com/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
