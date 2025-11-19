@@ -35,7 +35,7 @@ jobs:
       - name: Generate test environment keys
         run: |
           export SECRET_KEY=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
-          export ENCRYPTION_KEY=$(python3 generate_key.py)
+          export ENCRYPTION_KEY=$(python3 -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')
           echo "SECRET_KEY=$SECRET_KEY" >> $GITHUB_ENV
           echo "ENCRYPTION_KEY=$ENCRYPTION_KEY" >> $GITHUB_ENV
           echo "✅ Generated test keys"
