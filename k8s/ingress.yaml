@@ -1,0 +1,34 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: monitoring-dashboard
+  namespace: monitoring-dashboard
+  labels:
+    app.kubernetes.io/name: monitoring-dashboard
+    app.kubernetes.io/component: ingress
+  annotations:
+    # Uncomment and configure based on your ingress controller
+    # nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+spec:
+  ingressClassName: nginx  # Change based on your ingress controller
+  rules:
+  - host: monitoring-dashboard.example.com  # Replace with your domain
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: monitoring-dashboard
+            port:
+              name: http
+  # Uncomment for TLS/HTTPS
+  # tls:
+  # - hosts:
+  #   - monitoring-dashboard.example.com
+  #   secretName: monitoring-dashboard-tls

@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: monitoring-dashboard-config
+  namespace: monitoring-dashboard
+  labels:
+    app.kubernetes.io/name: monitoring-dashboard
+    app.kubernetes.io/component: config
+data:
+  REFRESH_INTERVAL_SECONDS: "30"
+  # Add other non-sensitive configuration here

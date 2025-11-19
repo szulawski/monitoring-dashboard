@@ -1,0 +1,122 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: monitoring-dashboard
+  namespace: monitoring-dashboard
+  labels:
+    app.kubernetes.io/name: monitoring-dashboard
+    app.kubernetes.io/component: application
+    app.kubernetes.io/version: "1.0.0"
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: monitoring-dashboard
+      app.kubernetes.io/component: application
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: monitoring-dashboard
+        app.kubernetes.io/component: application
+        app.kubernetes.io/version: "1.0.0"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/healthcheck"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      
+      containers:
+      - name: monitoring-dashboard
+        # IMPORTANT: Update this image reference based on your setup:
+        # Option 1 (Local/Minikube): monitoring-dashboard:latest
+        # Option 2 (Docker Hub): docker.io/username/monitoring-dashboard:latest
+        # Option 3 (GitHub CR): ghcr.io/username/monitoring-dashboard:latest
+        # Option 4 (Private): your-registry.example.com/monitoring-dashboard:latest
+        image: monitoring-dashboard:latest
+        imagePullPolicy: IfNotPresent  # Use 'Always' for production with registry
+        
+        ports:
+        - name: http
+          containerPort: 8000
+          protocol: TCP
+        
+        env:
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: monitoring-dashboard-secrets
+              key: SECRET_KEY
+        - name: ENCRYPTION_KEY
+          valueFrom:
+            secretKeyRef:
+              name: monitoring-dashboard-secrets
+              key: ENCRYPTION_KEY
+        - name: REFRESH_INTERVAL_SECONDS
+          valueFrom:
+            configMapKeyRef:
+              name: monitoring-dashboard-config
+              key: REFRESH_INTERVAL_SECONDS
+        - name: DATABASE_URL
+          value: "sqlite:////app/instance/database.db"
+        
+        volumeMounts:
+        - name: data
+          mountPath: /app/instance
+        
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        
+        livenessProbe:
+          httpGet:
+            path: /healthcheck
+            port: http
+            scheme: HTTP
+          initialDelaySeconds: 45
+          periodSeconds: 30
+          timeoutSeconds: 10
+          successThreshold: 1
+          failureThreshold: 3
+        
+        readinessProbe:
+          httpGet:
+            path: /healthcheck
+            port: http
+            scheme: HTTP
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
+        
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          runAsNonRoot: true
+          runAsUser: 1000
+          capabilities:
+            drop:
+            - ALL
+      
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: monitoring-dashboard-data
+      
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30

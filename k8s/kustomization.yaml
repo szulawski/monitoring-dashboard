@@ -1,0 +1,26 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: monitoring-dashboard
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - secret.yaml
+  - persistentvolumeclaim.yaml
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+
+# Common labels applied to all resources
+commonLabels:
+  app.kubernetes.io/managed-by: kustomize
+
+# Images to use (can be overridden with kustomize edit set image)
+# Examples:
+#   kustomize edit set image monitoring-dashboard=ghcr.io/username/monitoring-dashboard:v1.0.0
+#   kustomize edit set image monitoring-dashboard=docker.io/username/monitoring-dashboard:latest
+images:
+  - name: monitoring-dashboard
+    newName: monitoring-dashboard
+    newTag: latest
